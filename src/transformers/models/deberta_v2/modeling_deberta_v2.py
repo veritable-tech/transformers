@@ -36,7 +36,7 @@ from ...modeling_utils import PreTrainedModel
 from ...pytorch_utils import softmax_backward_data
 from ...utils import add_code_sample_docstrings, add_start_docstrings, add_start_docstrings_to_model_forward, logging
 from .configuration_deberta_v2 import DebertaV2Config
-
+from ..deberta import DebertaOnlyMLMHead
 
 logger = logging.get_logger(__name__)
 
@@ -1089,6 +1089,7 @@ class DebertaV2Model(DebertaV2PreTrainedModel):
 @add_start_docstrings("""DeBERTa Model with a `language modeling` head on top.""", DEBERTA_START_DOCSTRING)
 # Copied from transformers.models.deberta.modeling_deberta.DebertaForMaskedLM with Deberta->DebertaV2
 class DebertaV2ForMaskedLM(DebertaV2PreTrainedModel):
+    """Modified implementation from https://www.kaggle.com/code/nbroad/deberta-mlm-tests-nbme"""
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
     _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
 
@@ -1096,16 +1097,16 @@ class DebertaV2ForMaskedLM(DebertaV2PreTrainedModel):
         super().__init__(config)
 
         self.deberta = DebertaV2Model(config)
-        self.cls = DebertaV2OnlyMLMHead(config)
+        self.lm_predictions = DebertaOnlyMLMHead(config)
 
         # Initialize weights and apply final processing
         self.post_init()
 
     def get_output_embeddings(self):
-        return self.cls.predictions.decoder
+        return self.lm_predictions.lm_head.decoder
 
     def set_output_embeddings(self, new_embeddings):
-        self.cls.predictions.decoder = new_embeddings
+        self.lm_predictions.lm_head.decoder = new_embeddings
 
     @add_start_docstrings_to_model_forward(DEBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
@@ -1147,7 +1148,7 @@ class DebertaV2ForMaskedLM(DebertaV2PreTrainedModel):
         )
 
         sequence_output = outputs[0]
-        prediction_scores = self.cls(sequence_output)
+        prediction_scores = self.lm_predictions(sequence_output)
 
         masked_lm_loss = None
         if labels is not None:

@@ -992,6 +992,7 @@ class DebertaModel(DebertaPreTrainedModel):
 
 @add_start_docstrings("""DeBERTa Model with a `language modeling` head on top.""", DEBERTA_START_DOCSTRING)
 class DebertaForMaskedLM(DebertaPreTrainedModel):
+    """Modified implementation from https://www.kaggle.com/code/nbroad/deberta-mlm-tests-nbme"""
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
     _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
 
@@ -999,16 +1000,16 @@ class DebertaForMaskedLM(DebertaPreTrainedModel):
         super().__init__(config)
 
         self.deberta = DebertaModel(config)
-        self.cls = DebertaOnlyMLMHead(config)
+        self.lm_predictions = DebertaOnlyMLMHead(config)
 
         # Initialize weights and apply final processing
         self.post_init()
 
     def get_output_embeddings(self):
-        return self.cls.predictions.decoder
+        return self.lm_predictions.lm_head.decoder
 
     def set_output_embeddings(self, new_embeddings):
-        self.cls.predictions.decoder = new_embeddings
+        self.lm_predictions.lm_head.decoder = new_embeddings
 
     @add_start_docstrings_to_model_forward(DEBERTA_INPUTS_DOCSTRING.format("batch_size, sequence_length"))
     @add_code_sample_docstrings(
@@ -1050,7 +1051,7 @@ class DebertaForMaskedLM(DebertaPreTrainedModel):
         )
 
         sequence_output = outputs[0]
-        prediction_scores = self.cls(sequence_output)
+        prediction_scores = self.lm_predictions(sequence_output)
 
         masked_lm_loss = None
         if labels is not None:
@@ -1089,9 +1090,16 @@ class DebertaPredictionHeadTransform(nn.Module):
 
 # copied from transformers.models.bert.BertLMPredictionHead with bert -> deberta
 class DebertaLMPredictionHead(nn.Module):
+    """Modified implementation from https://www.kaggle.com/code/nbroad/deberta-mlm-tests-nbme"""
     def __init__(self, config):
         super().__init__()
-        self.transform = DebertaPredictionHeadTransform(config)
+        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
+
+        if isinstance(config.hidden_act, str):
+            self.transform_act_fn = ACT2FN[config.hidden_act]
+        else:
+            self.transform_act_fn = config.hidden_act
+        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
         # The output weights are the same as the input embeddings, but there is
         # an output-only bias for each token.
@@ -1103,7 +1111,9 @@ class DebertaLMPredictionHead(nn.Module):
         self.decoder.bias = self.bias
 
     def forward(self, hidden_states):
-        hidden_states = self.transform(hidden_states)
+        hidden_states = self.dense(hidden_states)
+        hidden_states = self.transform_act_fn(hidden_states)
+        hidden_states = self.LayerNorm(hidden_states)
         hidden_states = self.decoder(hidden_states)
         return hidden_states
 
@@ -1112,10 +1122,10 @@ class DebertaLMPredictionHead(nn.Module):
 class DebertaOnlyMLMHead(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.predictions = DebertaLMPredictionHead(config)
+        self.lm_head = DebertaLMPredictionHead(config)
 
     def forward(self, sequence_output):
-        prediction_scores = self.predictions(sequence_output)
+        prediction_scores = self.lm_head(sequence_output)
         return prediction_scores
 
 
