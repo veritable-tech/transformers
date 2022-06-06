@@ -36,7 +36,7 @@ from ...modeling_utils import PreTrainedModel
 from ...pytorch_utils import softmax_backward_data
 from ...utils import add_code_sample_docstrings, add_start_docstrings, add_start_docstrings_to_model_forward, logging
 from .configuration_deberta_v2 import DebertaV2Config
-from ..deberta import DebertaOnlyMLMHead
+from ..deberta.modeling_deberta import DebertaOnlyMLMHead
 
 logger = logging.get_logger(__name__)
 
